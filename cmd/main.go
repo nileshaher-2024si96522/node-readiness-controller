@@ -28,6 +28,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -37,6 +38,7 @@ import (
 	nodereadinessiov1alpha1 "github.com/ajaysundark/node-readiness-gate-controller/api/v1alpha1"
 	"github.com/ajaysundark/node-readiness-gate-controller/internal/controller"
 	"github.com/ajaysundark/node-readiness-gate-controller/internal/info"
+	"github.com/ajaysundark/node-readiness-gate-controller/internal/webhook"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -90,19 +92,44 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create Kubernetes clientset for direct API access
+	clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		setupLog.Error(err, "unable to create kubernetes clientset")
+		os.Exit(1)
+	}
+
+	// Create the main ReadinessGateController
+	readinessController := controller.NewReadinessGateController(mgr, clientset)
+
+	// Create reconcilers linked to the main controller
+	ruleReconciler := &controller.RuleReconciler{
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Controller: readinessController,
+	}
+
+	nodeReconciler := &controller.NodeReconciler{
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Controller: readinessController,
+	}
+
+	// Setup controllers with manager
 	ctx := ctrl.SetupSignalHandler()
-	if err := (&controller.RuleReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(ctx, mgr); err != nil {
+	if err := ruleReconciler.SetupWithManager(ctx, mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NodeReadinessGateRule")
 		os.Exit(1)
 	}
-	if err := (&controller.NodeReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	if err := nodeReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Node")
+		os.Exit(1)
+	}
+
+	// Setup webhook
+	nodeReadinessWebhook := webhook.NewNodeReadinessGateRuleWebhook(mgr.GetClient())
+	if err := nodeReadinessWebhook.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "NodeReadinessGateRule")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

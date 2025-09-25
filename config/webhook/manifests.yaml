@@ -1,0 +1,26 @@
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: validating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-nodereadiness-io-v1alpha1-nodereadinessgaterule
+  failurePolicy: Fail
+  name: vnodereadinessgaterule.kb.io
+  rules:
+  - apiGroups:
+    - nodereadiness.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - nodereadinessgaterules
+  sideEffects: None

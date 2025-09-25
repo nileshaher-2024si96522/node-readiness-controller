@@ -1,13 +1,12 @@
 apiVersion: nodereadiness.io/v1alpha1
 kind: NodeReadinessGateRule
 metadata:
-  labels:
-    app.kubernetes.io/name: nrgcontroller
-    app.kubernetes.io/managed-by: kustomize
-  name: nodereadinessgaterule-sample
+  name: network-readiness-rule
 spec:
   conditions:
     - type: "network.kubernetes.io/CNIReady"
+      requiredStatus: "True"
+    - type: "network.kubernetes.io/NetworkProxyReady"
       requiredStatus: "True"
   taint:
     key: "readiness.k8s.io/NetworkReady"

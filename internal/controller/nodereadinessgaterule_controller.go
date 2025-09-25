@@ -75,7 +75,7 @@ func NewReadinessGateController(mgr ctrl.Manager, clientset kubernetes.Interface
 type RuleReconciler struct {
 	client.Client
 	Scheme     *runtime.Scheme
-	controller *ReadinessGateController
+	Controller *ReadinessGateController
 }
 
 // +kubebuilder:rbac:groups=nodereadiness.io,resources=nodereadinessgaterules,verbs=get;list;watch;create;update;patch;delete
@@ -90,18 +90,18 @@ func (r *RuleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if err := r.Get(ctx, req.NamespacedName, rule); err != nil {
 		if client.IgnoreNotFound(err) == nil {
 			// Rule deleted, remove from cache and clean up
-			r.controller.removeRuleFromCache(req.Name)
+			r.Controller.removeRuleFromCache(req.Name)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
 
 	// Update rule cache
-	r.controller.updateRuleCache(rule)
+	r.Controller.updateRuleCache(rule)
 
 	// Handle dry run
 	if rule.Spec.DryRun {
-		if err := r.controller.processDryRun(ctx, rule); err != nil {
+		if err := r.Controller.processDryRun(ctx, rule); err != nil {
 			log.Error(err, "Failed to process dry run", "rule", rule.Name)
 			return ctrl.Result{RequeueAfter: time.Minute}, err
 		}
@@ -110,14 +110,14 @@ func (r *RuleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		rule.Status.DryRunResults = nil
 
 		// Process all applicable nodes for this rule
-		if err := r.controller.processAllNodesForRule(ctx, rule); err != nil {
+		if err := r.Controller.processAllNodesForRule(ctx, rule); err != nil {
 			log.Error(err, "Failed to process nodes for rule", "rule", rule.Name)
 			return ctrl.Result{RequeueAfter: time.Minute}, err
 		}
 	}
 
 	// Update rule status
-	if err := r.controller.updateRuleStatus(ctx, rule); err != nil {
+	if err := r.Controller.updateRuleStatus(ctx, rule); err != nil {
 		log.Error(err, "Failed to update rule status", "rule", rule.Name)
 		return ctrl.Result{RequeueAfter: time.Minute}, err
 	}

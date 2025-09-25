@@ -38,7 +38,7 @@ import (
 type NodeReconciler struct {
 	client.Client
 	Scheme     *runtime.Scheme
-	controller *ReadinessGateController
+	Controller *ReadinessGateController
 }
 
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch;create;update;patch;delete
@@ -57,7 +57,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	// Process node against all applicable rules
-	if err := r.controller.processNodeAgainstAllRules(ctx, node); err != nil {
+	if err := r.Controller.processNodeAgainstAllRules(ctx, node); err != nil {
 		log.Error(err, "Failed to process node", "node", node.Name)
 		return ctrl.Result{RequeueAfter: time.Minute}, err
 	}
