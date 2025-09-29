@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -373,6 +374,63 @@ var _ = Describe("NodeReadinessGateRule Controller", func() {
 			Eventually(func() bool {
 				return readinessController.isBootstrapCompleted(nodeName, ruleName)
 			}).Should(BeTrue())
+		})
+	})
+
+	Context("when a new rule is created", func() {
+		var node *corev1.Node
+		var rule *nodereadinessiov1alpha1.NodeReadinessGateRule
+
+		BeforeEach(func() {
+			node = &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "node1", Labels: map[string]string{"app": "backend"}},
+				Status:     corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: "DBReady", Status: corev1.ConditionFalse}}},
+			}
+			rule = &nodereadinessiov1alpha1.NodeReadinessGateRule{
+				ObjectMeta: metav1.ObjectMeta{Name: "db-rule"},
+				Spec: nodereadinessiov1alpha1.NodeReadinessGateRuleSpec{
+					Conditions:      []nodereadinessiov1alpha1.ConditionRequirement{{Type: "DBReady", RequiredStatus: corev1.ConditionTrue}},
+					Taint:           nodereadinessiov1alpha1.TaintSpec{Key: "db-unready", Effect: corev1.TaintEffectNoSchedule},
+					EnforcementMode: nodereadinessiov1alpha1.EnforcementModeContinuous,
+					NodeSelector:    &metav1.LabelSelector{MatchLabels: map[string]string{"app": "backend"}},
+				},
+			}
+			Expect(k8sClient.Create(ctx, node)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			Expect(k8sClient.Delete(ctx, node)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, rule)).To(Succeed())
+		})
+
+		It("should evaluate the rule against existing nodes and add taints if necessary", func() {
+			// Create the rule
+			Expect(k8sClient.Create(ctx, rule)).To(Succeed())
+
+			// Reconcile the rule
+			_, err := ruleReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: "db-rule"}})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify that the taint has been added to the node
+			Eventually(func() bool {
+				updatedNode := &corev1.Node{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: "node1"}, updatedNode); err != nil {
+					return false
+				}
+				for _, taint := range updatedNode.Spec.Taints {
+					if taint.Key == rule.Spec.Taint.Key && taint.Effect == rule.Spec.Taint.Effect {
+						return true
+					}
+				}
+				return false
+			}, time.Second*5).Should(BeTrue())
+
+			// Verify the status of the rule
+			Eventually(func() []string {
+				updatedRule := &nodereadinessiov1alpha1.NodeReadinessGateRule{}
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: "db-rule"}, updatedRule)
+				return updatedRule.Status.AppliedNodes
+			}, time.Second*5).Should(ContainElement("node1"))
 		})
 	})
 })

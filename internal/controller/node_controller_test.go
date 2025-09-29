@@ -17,16 +17,273 @@ limitations under the License.
 package controller
 
 import (
+	"context"
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/fake"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	nodereadinessiov1alpha1 "github.com/ajaysundark/node-readiness-gate-controller/api/v1alpha1"
 )
 
 var _ = Describe("Node Controller", func() {
-	Context("When reconciling a resource", func() {
+	const (
+		nodeName      = "test-node"
+		ruleName      = "test-rule"
+		taintKey      = "test-taint"
+		conditionType = "TestCondition"
+	)
 
-		It("should successfully reconcile the resource", func() {
+	var (
+		ctx                 context.Context
+		readinessController *ReadinessGateController
+		nodeReconciler      *NodeReconciler
+		scheme              *runtime.Scheme
+		fakeClientset       *fake.Clientset
+		node                *corev1.Node
+		rule                *nodereadinessiov1alpha1.NodeReadinessGateRule
+		namespacedName      types.NamespacedName
+	)
 
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+	BeforeEach(func() {
+		ctx = context.Background()
+		scheme = runtime.NewScheme()
+		Expect(nodereadinessiov1alpha1.AddToScheme(scheme)).To(Succeed())
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+
+		fakeClientset = fake.NewSimpleClientset()
+		readinessController = &ReadinessGateController{
+			Client:    k8sClient,
+			Scheme:    scheme,
+			clientset: fakeClientset,
+			ruleCache: make(map[string]*nodereadinessiov1alpha1.NodeReadinessGateRule),
+		}
+
+		nodeReconciler = &NodeReconciler{
+			Client:     k8sClient,
+			Scheme:     scheme,
+			Controller: readinessController,
+		}
+		namespacedName = types.NamespacedName{Name: nodeName}
+
+		node = &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   nodeName,
+				Labels: map[string]string{"env": "test"},
+			},
+			Spec: corev1.NodeSpec{
+				Taints: []corev1.Taint{
+					{Key: taintKey, Effect: corev1.TaintEffectNoSchedule},
+				},
+			},
+			Status: corev1.NodeStatus{
+				Conditions: []corev1.NodeCondition{
+					{Type: conditionType, Status: corev1.ConditionFalse},
+				},
+			},
+		}
+
+		rule = &nodereadinessiov1alpha1.NodeReadinessGateRule{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: ruleName,
+			},
+			Spec: nodereadinessiov1alpha1.NodeReadinessGateRuleSpec{
+				Conditions: []nodereadinessiov1alpha1.ConditionRequirement{
+					{Type: conditionType, RequiredStatus: corev1.ConditionTrue},
+				},
+				Taint: nodereadinessiov1alpha1.TaintSpec{
+					Key:    taintKey,
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+				NodeSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"env": "test"},
+				},
+			},
+		}
+	})
+
+	JustBeforeEach(func() {
+		Expect(k8sClient.Create(ctx, node)).To(Succeed())
+		Expect(k8sClient.Create(ctx, rule)).To(Succeed())
+
+		// Manually add rule to cache to simulate RuleReconciler
+		readinessController.updateRuleCache(rule)
+	})
+
+	AfterEach(func() {
+		Expect(k8sClient.Delete(ctx, node)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, rule)).To(Succeed())
+		readinessController.removeRuleFromCache(ruleName)
+	})
+
+	Context("when reconciling a node", func() {
+		When("in bootstrap-only mode", func() {
+			BeforeEach(func() {
+				rule.Spec.EnforcementMode = nodereadinessiov1alpha1.EnforcementModeBootstrapOnly
+			})
+
+			It("should remove the taint when conditions are met", func() {
+				// Initial state: taint exists
+				Expect(node.Spec.Taints).ToNot(BeEmpty())
+
+				// Update condition to be satisfied
+				node.Status.Conditions[0].Status = corev1.ConditionTrue
+				Expect(k8sClient.Status().Update(ctx, node)).To(Succeed())
+
+				// Reconcile
+				_, err := nodeReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: namespacedName})
+				Expect(err).NotTo(HaveOccurred())
+
+				// Verify taint is removed
+				Eventually(func() bool {
+					updatedNode := &corev1.Node{}
+					_ = k8sClient.Get(ctx, namespacedName, updatedNode)
+					for _, taint := range updatedNode.Spec.Taints {
+						if taint.Key == taintKey {
+							return true
+						}
+					}
+					return false
+				}, time.Second*5).Should(BeFalse())
+
+				// Verify bootstrap completion annotation is added
+				Eventually(func() map[string]string {
+					updatedNode := &corev1.Node{}
+					_ = k8sClient.Get(ctx, namespacedName, updatedNode)
+					return updatedNode.Annotations
+				}).Should(HaveKey("readiness.k8s.io/bootstrap-completed-" + ruleName))
+			})
+
+			It("should not re-add the taint if conditions regress after completion", func() {
+				// Step 1: Meet conditions and remove taint
+				node.Status.Conditions[0].Status = corev1.ConditionTrue
+				Expect(k8sClient.Status().Update(ctx, node)).To(Succeed())
+				_, err := nodeReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: namespacedName})
+				Expect(err).NotTo(HaveOccurred())
+				Eventually(func() bool {
+					updatedNode := &corev1.Node{}
+					_ = k8sClient.Get(ctx, namespacedName, updatedNode)
+					for _, taint := range updatedNode.Spec.Taints {
+						if taint.Key == taintKey {
+							return true
+						}
+					}
+					return false
+				}, time.Second*5).Should(BeFalse())
+
+				// Step 2: Regress conditions
+				updatedNode := &corev1.Node{}
+				Expect(k8sClient.Get(ctx, namespacedName, updatedNode)).To(Succeed())
+				updatedNode.Status.Conditions[0].Status = corev1.ConditionFalse
+				Expect(k8sClient.Status().Update(ctx, updatedNode)).To(Succeed())
+
+				// Reconcile again
+				_, err = nodeReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: namespacedName})
+				Expect(err).NotTo(HaveOccurred())
+
+				// Verify taint is NOT re-added
+				Consistently(func() bool {
+					recheckedNode := &corev1.Node{}
+					_ = k8sClient.Get(ctx, namespacedName, recheckedNode)
+					for _, taint := range recheckedNode.Spec.Taints {
+						if taint.Key == taintKey {
+							return true
+						}
+					}
+					return false
+				}, time.Second*2).Should(BeFalse())
+			})
+		})
+
+		When("in continuous mode", func() {
+			BeforeEach(func() {
+				rule.Spec.EnforcementMode = nodereadinessiov1alpha1.EnforcementModeContinuous
+			})
+
+			It("should remove the taint when conditions are met", func() {
+				node.Status.Conditions[0].Status = corev1.ConditionTrue
+				Expect(k8sClient.Status().Update(ctx, node)).To(Succeed())
+
+				_, err := nodeReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: namespacedName})
+				Expect(err).NotTo(HaveOccurred())
+
+				Eventually(func() bool {
+					updatedNode := &corev1.Node{}
+					_ = k8sClient.Get(ctx, namespacedName, updatedNode)
+					for _, taint := range updatedNode.Spec.Taints {
+						if taint.Key == taintKey {
+							return true
+						}
+					}
+					return false
+				}, time.Second*5).Should(BeFalse())
+			})
+
+			It("should re-add the taint if conditions regress", func() {
+				// Step 1: Meet conditions and remove taint
+				node.Status.Conditions[0].Status = corev1.ConditionTrue
+				Expect(k8sClient.Status().Update(ctx, node)).To(Succeed())
+				_, err := nodeReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: namespacedName})
+				Expect(err).NotTo(HaveOccurred())
+				Eventually(func() bool {
+					updatedNode := &corev1.Node{}
+					_ = k8sClient.Get(ctx, namespacedName, updatedNode)
+					for _, taint := range updatedNode.Spec.Taints {
+						if taint.Key == taintKey {
+							return true
+						}
+					}
+					return false
+				}, time.Second*5).Should(BeFalse())
+
+				// Step 2: Regress conditions
+				updatedNode := &corev1.Node{}
+				Expect(k8sClient.Get(ctx, namespacedName, updatedNode)).To(Succeed())
+				updatedNode.Status.Conditions[0].Status = corev1.ConditionFalse
+				Expect(k8sClient.Status().Update(ctx, updatedNode)).To(Succeed())
+
+				// Reconcile again
+				_, err = nodeReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: namespacedName})
+				Expect(err).NotTo(HaveOccurred())
+
+				// Verify taint IS re-added
+				Eventually(func() bool {
+					recheckedNode := &corev1.Node{}
+					_ = k8sClient.Get(ctx, namespacedName, recheckedNode)
+					for _, taint := range recheckedNode.Spec.Taints {
+						if taint.Key == taintKey {
+							return true
+						}
+					}
+					return false
+				}, time.Second*5).Should(BeTrue())
+			})
+		})
+
+		When("a rule's node selector does not match", func() {
+			BeforeEach(func() {
+				rule.Spec.NodeSelector.MatchLabels = map[string]string{"env": "non-existent"}
+			})
+
+			It("should not remove the taint", func() {
+				node.Status.Conditions[0].Status = corev1.ConditionTrue
+				Expect(k8sClient.Status().Update(ctx, node)).To(Succeed())
+
+				_, err := nodeReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: namespacedName})
+				Expect(err).NotTo(HaveOccurred())
+
+				Consistently(func() []corev1.Taint {
+					updatedNode := &corev1.Node{}
+					_ = k8sClient.Get(ctx, namespacedName, updatedNode)
+					return updatedNode.Spec.Taints
+				}, time.Second*2).ShouldNot(BeEmpty())
+			})
 		})
 	})
 })

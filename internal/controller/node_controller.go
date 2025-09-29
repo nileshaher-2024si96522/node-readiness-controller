@@ -121,33 +121,26 @@ func (r *ReadinessGateController) hasTaintBySpec(node *corev1.Node, taintSpec re
 
 // addTaintBySpec adds a taint to a node
 func (r *ReadinessGateController) addTaintBySpec(ctx context.Context, node *corev1.Node, taintSpec readinessv1alpha1.TaintSpec) error {
-	newTaint := corev1.Taint{
-		Key:       taintSpec.Key,
-		Value:     taintSpec.Value,
-		Effect:    taintSpec.Effect,
-		TimeAdded: &metav1.Time{Time: time.Now()},
-	}
-
-	// Create a copy and update
-	nodeCopy := node.DeepCopy()
-	nodeCopy.Spec.Taints = append(nodeCopy.Spec.Taints, newTaint)
-	return r.Update(ctx, nodeCopy)
+	patch := client.StrategicMergeFrom(node.DeepCopy())
+	node.Spec.Taints = append(node.Spec.Taints, corev1.Taint{
+		Key:    taintSpec.Key,
+		Value:  taintSpec.Value,
+		Effect: taintSpec.Effect,
+	})
+	return r.Patch(ctx, node, patch)
 }
 
 // removeTaintBySpec removes a taint from a node
 func (r *ReadinessGateController) removeTaintBySpec(ctx context.Context, node *corev1.Node, taintSpec readinessv1alpha1.TaintSpec) error {
-	// Create a copy and remove taint
-	nodeCopy := node.DeepCopy()
+	patch := client.StrategicMergeFrom(node.DeepCopy())
 	var newTaints []corev1.Taint
-
-	for _, taint := range nodeCopy.Spec.Taints {
+	for _, taint := range node.Spec.Taints {
 		if !(taint.Key == taintSpec.Key && taint.Effect == taintSpec.Effect) {
 			newTaints = append(newTaints, taint)
 		}
 	}
-
-	nodeCopy.Spec.Taints = newTaints
-	return r.Update(ctx, nodeCopy)
+	node.Spec.Taints = newTaints
+	return r.Patch(ctx, node, patch)
 }
 
 // Bootstrap completion tracking
