@@ -1,2 +1,5 @@
 resources:
 - manager.yaml
+patchesStrategicMerge:
+- platform_patch.yaml
+

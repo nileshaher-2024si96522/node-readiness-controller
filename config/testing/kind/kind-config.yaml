@@ -1,0 +1,21 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: nrg-test
+nodes:
+- role: control-plane
+- role: worker # platform
+  kubeadmConfigPatches:
+  - |
+    kind: JoinConfiguration
+    nodeRegistration:
+      kubeletExtraArgs:
+        node-labels: "reserved-for=platform"
+        register-with-taints: "node-restriction.kubernetes.io/reserved-for=platform:NoExecute"
+- role: worker # workers; reserved labels like node-role.kubernetes.io/worker cannot be used in kind ref: kind/issues/3536 
+  kubeadmConfigPatches:
+  - |
+    kind: JoinConfiguration
+    nodeRegistration:
+      kubeletExtraArgs:
+        node-labels: "node-group=workers"
+        register-with-taints: "readiness.k8s.io/NetworkReady=pending:NoSchedule"

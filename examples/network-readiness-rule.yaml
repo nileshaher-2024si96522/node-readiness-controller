@@ -10,7 +10,11 @@ spec:
     key: "readiness.k8s.io/NetworkReady"
     effect: "NoSchedule"
     value: "pending"
-  enforcementMode: "bootstrap-only"
+  enforcementMode: "continuous"
   nodeSelector:
-    matchLabels:
-      node-role.kubernetes.io/worker: ""
+    matchExpressions:
+      - key: node-role.kubernetes.io/control-plane
+        operator: DoesNotExist
+      - key: reserved-for
+        operator: NotIn
+        values: ["platform"]

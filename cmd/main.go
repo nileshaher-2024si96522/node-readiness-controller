@@ -59,12 +59,16 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
+	var enableWebhook bool
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(&enableWebhook, "enable-webhook", true,
+		"Enable webhook for the controller manager. Requires TLS certificates to be configured.")
+	flag.Parse()
 
 	opts := zap.Options{
 		Development:     true,
@@ -126,11 +130,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Setup webhook
-	nodeReadinessWebhook := webhook.NewNodeReadinessGateRuleWebhook(mgr.GetClient())
-	if err := nodeReadinessWebhook.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create webhook", "webhook", "NodeReadinessGateRule")
-		os.Exit(1)
+	if !enableWebhook {
+		setupLog.Info("webhook is disabled")
+	} else {
+		nodeReadinessWebhook := webhook.NewNodeReadinessGateRuleWebhook(mgr.GetClient())
+		if err := nodeReadinessWebhook.SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "NodeReadinessGateRule")
+			os.Exit(1)
+		}
+		setupLog.Info("webhook is enabled")
 	}
 	// +kubebuilder:scaffold:builder
 

@@ -51,14 +51,12 @@ spec:
       #             values:
       #               - linux
       nodeSelector:
-        node-role.kubernetes.io/control-plane: ""
+        reserved-for: platform
       tolerations:
-      - key: "node-role.kubernetes.io/control-plane"
-        operator: "Exists"
-        effect: "NoSchedule"
-      - key: "node.kubernetes.io/not-ready"
-        operator: "Exists"
-        effect: "NoSchedule"
+      - key: "node-restriction.kubernetes.io/reserved-for"
+        operator: "Equal"
+        value: "platform"
+        effect: "NoExecute"
       securityContext:
         # Projects are configured by default to adhere to the "restricted" Pod Security Standards.
         # This ensures that deployments meet the highest security requirements for Kubernetes.
@@ -72,6 +70,7 @@ spec:
         args:
           - --leader-elect
           - --health-probe-bind-address=:8081
+          - --enable-webhook=false
         image: controller:latest
         name: manager
         ports: []

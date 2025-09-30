@@ -1,0 +1,15 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+  namespace: system
+spec:
+  template:
+    spec:
+      nodeSelector:
+        reserved-for: platform
+      tolerations:
+      - key: "node-restriction.kubernetes.io/reserved-for"
+        operator: "Equal"
+        value: "platform"
+        effect: "NoExecute"
