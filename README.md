@@ -102,7 +102,7 @@ graph TB
 - **NodeReconciler**: Handles node condition changes and evaluates applicable rules
 - Manages taint addition/removal based on condition satisfaction
 
-#### 3. Validation Webhook
+#### 3. [WIP] Validation Webhook
 - Prevents conflicting rules (same taint key with overlapping node selectors)
 - Validates rule specifications and required fields
 - Ensures system consistency and prevents misconfigurations
@@ -259,10 +259,10 @@ View rule status and evaluation results:
 kubectl get nodereadinessgaterules
 
 # Detailed status of a specific rule
-kubectl describe nodereadinessgaterule storage-readiness-rule
+kubectl describe nodereadinessgaterule network-readiness-rule
 
 # Check rule evaluation per node
-kubectl get nodereadinessgaterule storage-readiness-rule -o yaml
+kubectl get nodereadinessgaterule network-readiness-rule -o yaml
 ```
 
 The status includes:
