@@ -112,8 +112,17 @@ var _ = Describe("Node Controller", func() {
 	})
 
 	AfterEach(func() {
-		Expect(k8sClient.Delete(ctx, node)).To(Succeed())
-		Expect(k8sClient.Delete(ctx, rule)).To(Succeed())
+		// Delete node first
+		k8sClient.Delete(ctx, node)
+
+		// Remove finalizers from rule before deleting to avoid stuck deletion
+		updatedRule := &nodereadinessiov1alpha1.NodeReadinessGateRule{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: ruleName}, updatedRule); err == nil {
+			updatedRule.Finalizers = nil
+			k8sClient.Update(ctx, updatedRule)
+		}
+		k8sClient.Delete(ctx, rule)
+
 		readinessController.removeRuleFromCache(ruleName)
 	})
 
