@@ -128,7 +128,7 @@ var _ = AfterSuite(func() {
 		nodeList := &corev1.NodeList{}
 		if err := k8sClient.List(cleanupCtx, nodeList); err == nil {
 			for i := range nodeList.Items {
-				k8sClient.Delete(cleanupCtx, &nodeList.Items[i])
+				_ = k8sClient.Delete(cleanupCtx, &nodeList.Items[i])
 			}
 		}
 	}

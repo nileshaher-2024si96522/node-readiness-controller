@@ -320,7 +320,7 @@ var _ = Describe("NodeReadinessGateRule Controller", func() {
 			}
 
 			Expect(k8sClient.Create(ctx, rule)).To(Succeed())
-			defer k8sClient.Delete(ctx, rule)
+			defer func() { _ = k8sClient.Delete(ctx, rule) }()
 
 			// First add rule to cache
 			readinessController.updateRuleCache(ctx, rule)
@@ -444,7 +444,7 @@ var _ = Describe("NodeReadinessGateRule Controller", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, node)).To(Succeed())
-			defer k8sClient.Delete(ctx, node)
+			defer func() { _ = k8sClient.Delete(ctx, node) }()
 
 			// Mark as completed
 			readinessController.markBootstrapCompleted(ctx, nodeName, ruleName)
@@ -612,8 +612,8 @@ var _ = Describe("NodeReadinessGateRule Controller", func() {
 		})
 
 		AfterEach(func() {
-			k8sClient.Delete(ctx, testNode)
-			k8sClient.Delete(ctx, rule)
+			_ = k8sClient.Delete(ctx, testNode)
+			_ = k8sClient.Delete(ctx, rule)
 		})
 
 		It("should remove taints from nodes when rule is deleted", func() {
@@ -694,7 +694,7 @@ var _ = Describe("NodeReadinessGateRule Controller", func() {
 		AfterEach(func() {
 			Expect(k8sClient.Delete(ctx, rule)).To(Succeed())
 			// node1 is already deleted in the test
-			k8sClient.Delete(ctx, node2)
+			_ = k8sClient.Delete(ctx, node2)
 		})
 
 		It("should remove the node from the rule's status", func() {
@@ -791,9 +791,9 @@ var _ = Describe("NodeReadinessGateRule Controller", func() {
 		})
 
 		AfterEach(func() {
-			k8sClient.Delete(ctx, prodNode)
-			k8sClient.Delete(ctx, devNode)
-			k8sClient.Delete(ctx, rule)
+			_ = k8sClient.Delete(ctx, prodNode)
+			_ = k8sClient.Delete(ctx, devNode)
+			_ = k8sClient.Delete(ctx, rule)
 		})
 
 		It("should remove taints from nodes that no longer match the selector", func() {
