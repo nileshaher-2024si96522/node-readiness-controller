@@ -149,7 +149,7 @@ lint-config: $(GOLANGCI_LINT) ## Verify golangci-lint linter configuration
 
 .PHONY: verify-boilerplate
 verify-boilerplate: ## Verify boilerplate text exists in each file
-	 ./hack/verify-boilerplate.sh
+	 ./hack/verify-all.sh
 
 ## --------------------------------------
 ## Build
