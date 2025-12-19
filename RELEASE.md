@@ -1,9 +1,58 @@
 # Release Process
 
-The Kubernetes Template Project is released on an as-needed basis. The process is as follows:
+This document outlines the process for creating a new official release for the Node Readiness Controller.
 
-1. An issue is proposing a new release with a changelog since the last release
-1. All [OWNERS](OWNERS) must LGTM this release
-1. An OWNER runs `git tag -s $VERSION` and inserts the changelog and pushes the tag with `git push $VERSION`
-1. The release issue is closed
-1. An announcement email is sent to `dev@kubernetes.io` with the subject `[ANNOUNCE] kubernetes-template-project $VERSION is released`
+## 1. Propose the Release
+
+- Create a new GitHub Issue titled "Release vX.Y.Z" to track the release process.
+- In the issue, gather a preliminary changelog by reviewing commits since the last release. A good starting point is `git log --oneline <last-tag>..HEAD`.
+
+## 2. Prepare the Release Branch
+
+- Create a new branch from `main` named `release-vX.Y.Z`.
+- In this branch, update any documentation, examples, or manifests as needed for the release.
+- Ensure all tests are passing.
+
+## 3. Tag the Release
+
+Once the release branch is ready and has been approved by maintainers:
+
+- Make sure your local `main` branch is up to date and you have the release branch checked out.
+- Create an annotated, signed Git tag for the version. The tag message should contain the final changelog.
+
+  ```sh
+  # Example:
+  VERSION=v0.1.0
+  git tag -s "${VERSION}" -m "Release ${VERSION}
+
+  ### Release Notes
+  - Initial alpha release of the controller.
+  - Support for NodeReadinessRule API.
+  - Manages node taints based on custom readiness conditions."
+  ```
+
+- Push the tag to the main repository:
+
+  ```sh
+  git push origin "${VERSION}"
+  ```
+
+## 4. Create the GitHub Release
+
+- Pushing the tag will trigger the `cloudbuild.yaml` CI to build and publish the container image for the release (e.g., `us-central1-docker.pkg.dev/.../node-readiness-controller:vX.Y.Z`).
+- Go to the [Releases page](https://github.com/kubernetes-sigs/node-readiness-controller/releases) on GitHub.
+- Find the new tag and click "Edit tag".
+- Paste the same changelog into the release description.
+- Generate the release manifest locally for this version:
+
+  ```sh
+  make build-installer IMG_TAG=vX.Y.Z
+  ```
+- Upload the generated `dist/install.yaml` file as a release artifact.
+- Publish the release.
+
+## 5. Post-Release Tasks
+
+- Close the release tracking issue.
+- Announce the release on the `kubernetes-dev` and `sig-node` mailing lists. The subject should be: `[ANNOUNCE] Node Readiness Controller vX.Y.Z is released`.
+
