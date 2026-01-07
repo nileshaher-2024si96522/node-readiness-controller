@@ -1,6 +1,4 @@
-# Node Readiness Controller
-
-<img style="float: right; margin: auto;" width="180px" src="https://raw.githubusercontent.com/kubernetes-sigs/node-readiness-controller/main/docs/logo/node-readiness-controller-logo.svg"/>
+```markdown
 
 A Kubernetes controller that provides fine-grained, declarative readiness for nodes. It ensures nodes only accept workloads when all required components (e.g., network agents, GPU drivers, storage drivers, or custom health-checks) are fully ready on the node.
 
@@ -46,7 +44,7 @@ metadata:
   name: network-readiness-rule
 spec:
   conditions:
-    - type: "tigera.io/CalicoReady"
+    - type: "example.com/CNIReady"
       requiredStatus: "True"
   taint:
     key: "readiness.k8s.io/NetworkReady"
@@ -73,3 +71,4 @@ See the Kubernetes community on the [community page](http://kubernetes.io/commun
 ## Project Status
 
 This project is currently in **alpha**. The API may change in future releases.
+```
